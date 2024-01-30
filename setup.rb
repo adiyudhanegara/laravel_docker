@@ -5,7 +5,7 @@ require 'ipaddr'
 require 'rbconfig'
 
 ### SETTINGS ###
-$project_name    = "railsproject"
+$project_name    = "phpproject"
 $host_name       = $project_name + ".test"
 $db_root_pw      = "12345"
 $db_user_pw      = "123456"
@@ -29,6 +29,7 @@ $net_db_ip = $net_gateway.succ
 $net_app_ip = $net_db_ip.succ
 $net_web_ip = $net_app_ip.succ
 $net_redis_ip = $net_web_ip.succ
+$net_fpm_ip = $net_redis_ip.succ
 
 # seems to work only under linux
 $forwarded_port ||= 3000 if RbConfig::CONFIG['host_os'] !~ /linux/ 
@@ -135,7 +136,6 @@ def create_docker_files
   File.write("Dockerfile-app", <<~EOF)
     FROM node:latest AS node
     FROM php:#{$php_version || '8.2'}-fpm
-
     # Arguments defined in docker-compose.yml
     ARG uid
     ARG user
@@ -251,6 +251,12 @@ def create_compose_file
         "image" => "redis:latest",
         "container_name" => $project_name + "-redis",
         "networks" => { $project_name + "_net" => { "ipv4_address" => $net_redis_ip.to_s } },
+      },
+      "fpm" => {
+          "image" => "php:8.2-fpm",
+          "networks" => { $project_name + "_net" => { "ipv4_address" => $net_fpm_ip.to_s } },
+          "volumes" => [ "./:/var/www" ],
+          "ports" => ["9000:9000"]
       }
     },
     "networks" => {

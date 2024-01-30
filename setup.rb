@@ -5,19 +5,15 @@ require 'ipaddr'
 require 'rbconfig'
 
 ### SETTINGS ###
-$project_name    = "railsproject"
-$host_name       = $project_name + ".test"
-$db_root_pw      = "12345"
-$db_user_pw      = "123456"
-$db_prod_user_pw = "1234567"
-$network         = "172.22.0.0/24"
-$forwarded_port  = nil
-$php_version     = nil
-$bundler_version = nil
-$rails_version   = nil
-$with_sidekiq    = false
-$with_yarn       = false
-$with_vips       = false
+$project_name     = "laravelproject"
+$host_name        = $project_name + ".test"
+$db_root_pw       = "12345"
+$db_user_pw       = "123456"
+$db_prod_user_pw  = "1234567"
+$network          = "172.22.0.0/24"
+$forwarded_port   = nil
+$php_version      = nil
+$laravel_version  = nil
 ##### END ######
 
 $db_name      = $project_name.tr('-.', '_')
@@ -29,6 +25,7 @@ $net_db_ip = $net_gateway.succ
 $net_app_ip = $net_db_ip.succ
 $net_web_ip = $net_app_ip.succ
 $net_redis_ip = $net_web_ip.succ
+$net_phpmyadmin_ip = $net_redis_ip.succ
 
 # seems to work only under linux
 $forwarded_port ||= 3000 if RbConfig::CONFIG['host_os'] !~ /linux/ 
@@ -106,35 +103,13 @@ def prompt_yn question
 end
 
 # methods
-# TBD: Analyze Composer JSON
-def analyze_gemfile
-  if File.exist?("webroot/Gemfile")
-    puts "Found Gemfile, will set up system based on it.".yellow
-    lock_content = File.read("webroot/Gemfile.lock")
-    if lock_content =~ /^BUNDLED WITH\n\s*([\d.]+)/
-      res = prompt_yn "Found recorded bundler version (#{$1}) in Gemfile.lock,\nshould we use this version inside the container?"
-      $bundler_version = $1 if res
-    end
-    gem_content = File.read("webroot/Gemfile")
-    if gem_content =~ /^ruby\W+([\d.]+)/
-      yn = prompt_yn "Found recorded ruby version (#{$1}) in Gemfile,\nshould we use this version inside the container?"
-      $php_version = $1 if yn
-    end
-    if gem_content =~ /^gem\W+rails\W+([\d.]+)/
-      yn = prompt_yn "Found recorded rails version (#{$1}) in Gemfile.lock,\nshould we use this version inside the container?"
-      $rails_version = $1 if yn
-    end
-  else
-    puts "No Gemfile found in webroot, continue to create new rails project.".yellow
-  end
-end
 
 def create_docker_files
   return if File.exist?("Dockerfile-app")
 
   File.write("Dockerfile-app", <<~EOF)
     FROM node:latest AS node
-    FROM php:#{$php_version || '8.2'}-fpm
+    FROM php:#{"#{$php_version}-" unless $php_version.nil?}fpm
 
     # Arguments defined in docker-compose.yml
     ARG uid
@@ -164,20 +139,19 @@ def create_docker_files
     # Install PHP extensions
     RUN docker-php-ext-install pdo_mysql mbstring exif pcntl bcmath gd
 
-    COPY env/starter.sh /usr/local/bin
-    
     # Get latest Composer
     COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
-    
+
     # Create system user to run Composer and Artisan Commands
     RUN useradd -G www-data,root -u $uid -d /home/$user $user
-    RUN mkdir -p /home/$user/.composer && \\
-        chown -R $uid:$uid /home/$user
-    
+    RUN mkdir -p /home/$user/.composer && \
+        chown -R $user:$user /home/$user
+
     # Set working directory
     WORKDIR /var/www
+    COPY env/starter.sh /usr/local/bin
 
-    USER $uid:$uid
+    USER $user
     CMD ["/usr/local/bin/starter.sh"]
   EOF
 
@@ -187,8 +161,9 @@ def create_docker_files
 
     # SSL Certificate for https
     RUN apt-get update -qq && \\
+        apt-get install -y vim && \\
         apt-get install -y openssl && \\
-        mkdir /etc/nginx/ssl && \\
+        mkdir -p /etc/nginx/ssl && \\
         openssl req -x509 -nodes -days 3650 -newkey rsa:2048 -keyout /etc/nginx/ssl/nginx.key -out /etc/nginx/ssl/nginx.crt -subj "/C=JP/CN=$hostname" && \\
         apt-get clean && rm -r /var/lib/apt/lists/*
 
@@ -225,19 +200,21 @@ def create_compose_file
           "./home:/home/#{$project_name}_user"
         ],
         "environment" => {
+          "TZ" => "Asia/Makassar",
           "REDIS_URL" => "redis://redis:6379/1"
         },
         "depends_on" => [ "db" ],
         "networks" => { $project_name + "_net" => { "ipv4_address" => $net_app_ip.to_s } },
       },
       "web" => {
+        "image" => "nginx:latest",
         "container_name" => $project_name + "-web",
         "build" => {
-          "context" => "./",
-          "dockerfile" => "Dockerfile-web",
           "args" => {
             "hostname" => $host_name
-          }
+          },
+          "context" => "./",
+          "dockerfile" => "Dockerfile-web"
         },
         "restart" => "unless-stopped",
         "volumes" => [
@@ -251,6 +228,21 @@ def create_compose_file
         "image" => "redis:latest",
         "container_name" => $project_name + "-redis",
         "networks" => { $project_name + "_net" => { "ipv4_address" => $net_redis_ip.to_s } },
+      },
+      "phpmyadmin" => {
+        "image" => "phpmyadmin:latest",
+        "container_name" => $project_name + "-phpmyadmin",
+        "environment" => {
+          "PMA_HOST" => "db",
+          "PMA_PORT" => 3306,
+          "PMA_ARBITRARY" => 1,
+          "PMA_USER" => $db_user,
+          "PMA_PASSWORD" => $db_user_pw,
+          "PMA_ABSOLUTE_URI" => "http://app/phpmyadmin/"
+        },
+        "restart" => "always",
+        "depends_on" => [ "db" ],
+        "networks" => { $project_name + "_net" => { "ipv4_address" => $net_phpmyadmin_ip.to_s } },
       }
     },
     "networks" => {
@@ -325,7 +317,7 @@ def db_init
   end
 end
 
-# TBD: Laravel Init
+# Laravel Init
 def laravel_init
   running_container %w[db app], "mariadb: ready for connections." do
     if File.exist?("webroot/app")
@@ -333,14 +325,14 @@ def laravel_init
     else
       install_laravel
     end
+    laravel_create_env
     laravel_dbseed
   end
-  laravel_create_env
 end
 
 def install_laravel
   file_content = File.read("env/laravel_new_commands.sh")
-  file_content.sub!(/## project name ##/, "#{$project_name}")
+  file_content.sub!(/## laravel version ##/, ($laravel_version.nil? ? " " : ":#{$laravel_version} "))
   File.write("env/laravel_new_commands.sh", file_content)
   system "docker compose exec -T app bash < env/laravel_new_commands.sh"
   File.write("webroot/.gitignore", "\n/config/database*\n", mode: "a")
@@ -356,18 +348,24 @@ def laravel_create_env
   laravel_env = File.read("webroot/.env").split("\n").map do |config|
     var = config.split("=")
     case var[0]
+    when "APP_NAME"
+      "#{var[0]}=\"#{$project_name}\""
+    when "APP_URL"
+      "#{var[0]}=http://#{$net_web_ip.to_s}"
     when "DB_CONNECTION"
-      "#{var[0]}=mysql2"
+      "#{var[0]}=mysql"
     when "DB_HOST"
       "#{var[0]}=#{$net_db_ip}"
     when "DB_PORT"
       "#{var[0]}=3306"
     when "DB_DATABASE"
-      "#{var[0]}=#{$db_name}"
+      "#{var[0]}=#{$db_name}_development"
     when "DB_USERNAME"
       "#{var[0]}=#{$db_user}"
     when "DB_PASSWORD"
       "#{var[0]}=#{$db_user_pw}"
+    when "REDIS_HOST"
+      "#{var[0]}=#{$net_redis_ip.to_s}"
     else
       config
     end
@@ -377,7 +375,7 @@ def laravel_create_env
 end
 
 def laravel_dbseed
-  system "docker compose exec app php artisan db:migrate:refresh"
+  system "docker compose exec app php artisan migrate:fresh"
 end
 
 ## MAIN ##
@@ -402,14 +400,11 @@ FileUtils.chown($user_id, nil, "webroot") if Process.uid == 0
 FileUtils.mkdir("database") unless File.exist?("database")
 FileUtils.chown($user_id, nil, "database") if Process.uid == 0
 
-# TBD: Analyze Composer JSON
-# analyze_gemfile
 create_docker_files
 create_compose_file
 system "docker compose build"
 
 db_init
-# TBD: Laravel Init
 laravel_init
 
 puts "setup finished, you may now start docker by running: 'docker compose up'".yellow

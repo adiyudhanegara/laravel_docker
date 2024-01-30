@@ -1,39 +1,23 @@
 #!/bin/bash
-echo "Starting up Rails project"
-rails_pid=
-sidekiq_pid=
+echo "Starting up Laravel project"
+laravel_pid=
 
 cd "$APP_HOME"
 
-# function start_rails() {
-#   rm -f tmp/pids/server.pid
-#   bundle exec rails server -b 0.0.0.0 &
-#   rails_pid=$!
-# }
+function start_laravel() {
+  rm -f tmp/pids/server.pid
+  php artisan serve --host=0.0.0.0 --port=3000 &
+  laravel_pid=$!
+}
 
-# function start_sidekiq() {
-#   if [[ ! -f "$GEM_HOME/bin/sidekiq" ]]; then
-#     return
-#   fi
-#   bundle exec sidekiq > >(tee log/sidekiq.log) &
-#   sidekiq_pid=$!
-# }
+function reload_services() {
+  echo "Restarting Laravel project"
+  kill $laravel_pid
+  start_laravel
+}
 
-# function reload_services() {
-#   echo "Restarting Rails project"
-#   kill $rails_pid
-#   start_rails
-
-#   if [[ -n "$sidekiq_pid" ]]; then
-#     echo "Restarting Sidekiq"
-#     kill $sidekiq_pid
-#     start_sidekiq
-#   fi
-# }
-
-# trap reload_services SIGUSR1
-# start_rails
-# start_sidekiq
+trap reload_services SIGUSR1
+start_laravel
 
 while true
 do

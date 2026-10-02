@@ -16,7 +16,7 @@ The template is intended for local development. It is not a production deploymen
 Clone the template into a project-specific directory:
 
 ```sh
-git clone <repository-url> my_project
+git clone git@github.com:adiyudhanegara/laravel_docker.git my_project
 cd my_project
 ```
 

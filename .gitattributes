@@ -1,0 +1,2 @@
+*.sh text eol=lf
+*.rb text eol=lf

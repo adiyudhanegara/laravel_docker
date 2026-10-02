@@ -1,0 +1,14 @@
+/database/
+/db-init/
+/mails/
+/webroot/
+
+/home/*
+!/home/.vimrc
+!/home/.zshrc
+!/home/dotfiles-inside
+
+/docker-compose.yml
+/Dockerfile-app
+/Dockerfile-web
+/nginx.conf

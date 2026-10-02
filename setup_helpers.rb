@@ -436,7 +436,9 @@ def create_docker_files!
 
     COPY env/starter.sh /usr/local/bin/starter.sh
     COPY env/php.ini /usr/local/etc/php/conf.d/99-phpdock.ini
-    RUN chmod +x /usr/local/bin/starter.sh
+    COPY env/motd.sh /usr/local/bin/motd.sh
+    RUN chmod +x /usr/local/bin/starter.sh && \\
+        echo '( source /usr/local/bin/motd.sh )' | tee -a /etc/zsh/zshrc /etc/bash.bashrc >/dev/null
 
     USER $uid:$gid
     CMD ["/usr/local/bin/starter.sh"]

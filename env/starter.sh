@@ -68,6 +68,9 @@ shutdown() {
 trap reload_services USR1 USR2
 trap shutdown TERM INT QUIT
 
+# The banner only prints for interactive shells, so mark this one as such.
+[[ -f /usr/local/bin/motd.sh ]] && ( PS1=1; source /usr/local/bin/motd.sh )
+
 start_fpm
 start_vite
 

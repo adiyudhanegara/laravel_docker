@@ -180,6 +180,8 @@ Open a shell:
 docker compose exec app zsh
 ```
 
+Interactive shells and the container's start-up log open with the banner in `env/motd.sh`. Edit that file and rebuild with `docker compose up -d --build` to change it.
+
 Run common Laravel commands:
 
 ```sh
